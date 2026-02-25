@@ -22,11 +22,7 @@
       max-width: 500px;
       margin: 0 auto;
     }
-    h1 {
-      text-align: center;
-      color: var(--accent);
-      margin-bottom: 10px;
-    }
+    h1 { text-align: center; color: var(--accent); margin-bottom: 10px; }
     #guildInput {
       width: 100%;
       padding: 12px;
@@ -48,23 +44,15 @@
       cursor: pointer;
       margin: 10px 0;
     }
-    button:hover {
-      background: #388bfd;
-    }
+    button:hover { background: #388bfd; }
     #status {
       text-align: center;
       font-weight: bold;
       margin: 15px 0;
       min-height: 24px;
     }
-    #status.error {
-      color: #f85149;
-    }
-    ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
+    #status.error { color: #f85149; }
+    ul { list-style: none; padding: 0; margin: 0; }
     li {
       background: var(--gray);
       padding: 12px;
@@ -76,19 +64,9 @@
       border-left: 4px solid var(--orange);
       background: #1f2a3a;
     }
-    .name {
-      font-weight: bold;
-      font-size: 1.1em;
-    }
-    .details {
-      font-size: 0.9em;
-      color: #8b949e;
-      margin-top: 4px;
-    }
-    #count {
-      font-size: 1.4em;
-      color: var(--green);
-    }
+    .name { font-weight: bold; font-size: 1.1em; }
+    .details { font-size: 0.9em; color: #8b949e; margin-top: 4px; }
+    #count { font-size: 1.4em; color: var(--green); }
   </style>
 </head>
 <body>
@@ -96,16 +74,16 @@
 
   <input type="text" id="guildInput" placeholder="Nome exato da guild (ex: Quinta Serie Ead)" />
   <button id="saveBtn">Salvar & Monitorar</button>
+  <button id="enableNotifications">Ativar Notificações (obrigatório para alertas)</button>
 
   <div id="status">Digite o nome da guild e clique em Salvar & Monitorar</div>
 
   <p>Online agora: <span id="count">0</span></p>
   <ul id="list"></ul>
 
-  <!-- Som da notificação (troque o src pelo seu arquivo se subir na raiz) -->
+  <!-- Som (troque src para seu notification.mp3 se subir na raiz) -->
   <audio id="notificationSound" preload="auto">
-    <source src="notification.mp3">
-    <!-- Alternativa: <source src="notification.mp3" type="audio/mpeg"> se subir o arquivo -->
+    <source src="https://assets.codepen.io/243235/notification.mp3" type="audio/mpeg">
   </audio>
 
   <script>
@@ -113,13 +91,14 @@
     const REFRESH_INTERVAL = 120000; // 2 minutos
     let previousOnlineNames = new Set();
     const sound = document.getElementById('notificationSound');
+    const statusEl = document.getElementById('status');
 
     // Carrega guild salva
     const savedGuild = localStorage.getItem('tibiaGuild');
     if (savedGuild) {
       document.getElementById('guildInput').value = savedGuild;
-      document.getElementById('status').textContent = 'Monitorando... Atualizando agora.';
-      checkGuild(true); // primeira carga sem notificação
+      statusEl.textContent = 'Monitorando... Atualizando agora.';
+      checkGuild(true); // primeira sem notificação
     }
 
     // Botão salvar
@@ -130,15 +109,32 @@
         return;
       }
       localStorage.setItem('tibiaGuild', guild);
-      document.getElementById('status').textContent = '✅ Guild salva! Atualizando...';
-      checkGuild(true); // força atualização sem notificar no primeiro save
+      statusEl.textContent = '✅ Guild salva! Atualizando...';
+      checkGuild(true);
+    });
+
+    // Botão ativar notificações
+    document.getElementById('enableNotifications').addEventListener('click', () => {
+      if ("Notification" in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            statusEl.textContent = 'Notificações ativadas! Você receberá alertas quando alguém entrar online.';
+            new Notification("Notificações ativadas", { body: "Pronto para monitorar a guild!" });
+          } else {
+            statusEl.classList.add('error');
+            statusEl.textContent = 'Permissão negada. Notificações não serão mostradas.';
+          }
+        });
+      } else {
+        statusEl.classList.add('error');
+        statusEl.textContent = 'Seu navegador não suporta notificações.';
+      }
     });
 
     async function checkGuild(isInitial = false) {
       const guild = localStorage.getItem('tibiaGuild');
       if (!guild) return;
 
-      const statusEl = document.getElementById('status');
       const countEl = document.getElementById('count');
       const listEl = document.getElementById('list');
 
@@ -187,7 +183,7 @@
             listEl.appendChild(li);
           });
 
-          // Notificação + som SOMENTE se houver novos e NÃO for a primeira carga
+          // Notificação + som SOMENTE se houver novos e NÃO for inicial
           if (newEntries.length > 0 && !isInitial) {
             const msg = newEntries.length === 1 
               ? `${newEntries[0].name} entrou online!` 
@@ -196,24 +192,19 @@
             statusEl.textContent = `Novos detectados: ${msg}`;
 
             // Notificação do navegador
-            if ("Notification" in window) {
-              if (Notification.permission === "granted") {
-                new Notification("Tibia Guild Online", { body: msg });
-              } else if (Notification.permission !== "denied") {
-                Notification.requestPermission().then(perm => {
-                  if (perm === "granted") {
-                    new Notification("Tibia Guild Online", { body: msg });
-                  }
-                });
-              }
+            if ("Notification" in window && Notification.permission === "granted") {
+              new Notification("Tibia Guild Online", { body: msg });
             }
 
-            // Toca som (volume baixo)
-            sound.volume = 0.3; // ← ajuste aqui se quiser mais baixo (0.1 a 0.5)
+            // Toca som
+            sound.volume = 0.3;
             sound.currentTime = 0;
-            sound.play().catch(e => console.log("Som bloqueado (precisa interação):", e));
+            sound.play().catch(e => {
+              console.log("Som bloqueado (precisa interação):", e);
+              statusEl.textContent += ' (Som bloqueado - clique em algo para habilitar)';
+            });
           } else {
-            statusEl.textContent = 'Atualizado! Nenhum novo login detectado.';
+            statusEl.textContent = 'Atualizado! Nenhum novo login.';
           }
 
           previousOnlineNames = currentNames;
@@ -233,9 +224,8 @@
     // Atualização automática
     setInterval(() => checkGuild(false), REFRESH_INTERVAL);
 
-    // Primeira chamada (sem notificação inicial)
+    // Primeira chamada sem notificação
     if (savedGuild) checkGuild(true);
   </script>
 </body>
 </html>
-
