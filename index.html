@@ -102,9 +102,10 @@
   <p>Online agora: <span id="count">0</span></p>
   <ul id="list"></ul>
 
+  <!-- Som da notificação (troque o src pelo seu arquivo se subir na raiz) -->
   <audio id="notificationSound" preload="auto">
     <source src="https://assets.codepen.io/243235/notification.mp3" type="audio/mpeg">
-    <!-- Você pode trocar por seu próprio MP3 depois -->
+    <!-- Alternativa: <source src="notification.mp3" type="audio/mpeg"> se subir o arquivo -->
   </audio>
 
   <script>
@@ -118,7 +119,7 @@
     if (savedGuild) {
       document.getElementById('guildInput').value = savedGuild;
       document.getElementById('status').textContent = 'Monitorando... Atualizando agora.';
-      checkGuild();
+      checkGuild(true); // primeira carga sem notificação
     }
 
     // Botão salvar
@@ -130,10 +131,10 @@
       }
       localStorage.setItem('tibiaGuild', guild);
       document.getElementById('status').textContent = '✅ Guild salva! Atualizando...';
-      checkGuild();
+      checkGuild(true); // força atualização sem notificar no primeiro save
     });
 
-    async function checkGuild() {
+    async function checkGuild(isInitial = false) {
       const guild = localStorage.getItem('tibiaGuild');
       if (!guild) return;
 
@@ -158,8 +159,8 @@
           .filter(m => m.status?.toLowerCase() === 'online')
           .map(m => ({
             name: m.name,
-            level: m.level,
-            vocation: m.vocation
+            level: m.level || '?',
+            vocation: m.vocation || '?'
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
 
@@ -167,13 +168,15 @@
 
         if (online.length === 0) {
           listEl.innerHTML = '<li>Ninguém online no momento</li>';
+          statusEl.textContent = 'Atualizado! Ninguém online.';
         } else {
           const currentNames = new Set(online.map(m => normalizeName(m.name)));
-          const newNames = [...currentNames].filter(n => !previousOnlineNames.has(n));
+          const newNamesNorm = [...currentNames].filter(n => !previousOnlineNames.has(n));
+          const newEntries = online.filter(m => newNamesNorm.includes(normalizeName(m.name)));
 
           online.forEach(m => {
             const li = document.createElement('li');
-            const isNew = newNames.includes(normalizeName(m.name));
+            const isNew = newNamesNorm.includes(normalizeName(m.name));
 
             if (isNew) li.classList.add('new');
 
@@ -184,29 +187,37 @@
             listEl.appendChild(li);
           });
 
-          // Notificação se houver novos
-          if (newNames.length > 0 && !force) {
-            const msg = newNames.length === 1 
-              ? `${newNames[0]} entrou online!` 
-              : `${newNames.length} novos online!`;
-            
-            if ("Notification" in window && Notification.permission === "granted") {
-              new Notification("Tibia Guild Online", { body: msg });
-            } else if (Notification.permission !== "denied") {
-              Notification.requestPermission().then(perm => {
-                if (perm === "granted") new Notification("Tibia Guild Online", { body: msg });
-              });
+          // Notificação + som SOMENTE se houver novos e NÃO for a primeira carga
+          if (newEntries.length > 0 && !isInitial) {
+            const msg = newEntries.length === 1 
+              ? `${newEntries[0].name} entrou online!` 
+              : `${newEntries.length} novos online: ${newEntries.map(m => m.name).join(', ')}`;
+
+            statusEl.textContent = `Novos detectados: ${msg}`;
+
+            // Notificação do navegador
+            if ("Notification" in window) {
+              if (Notification.permission === "granted") {
+                new Notification("Tibia Guild Online", { body: msg });
+              } else if (Notification.permission !== "denied") {
+                Notification.requestPermission().then(perm => {
+                  if (perm === "granted") {
+                    new Notification("Tibia Guild Online", { body: msg });
+                  }
+                });
+              }
             }
 
-            // Toca som
+            // Toca som (volume baixo)
+            sound.volume = 0.3; // ← ajuste aqui se quiser mais baixo (0.1 a 0.5)
             sound.currentTime = 0;
-            sound.play().catch(e => console.log("Som bloqueado:", e));
+            sound.play().catch(e => console.log("Som bloqueado (precisa interação):", e));
+          } else {
+            statusEl.textContent = 'Atualizado! Nenhum novo login detectado.';
           }
 
           previousOnlineNames = currentNames;
         }
-
-        statusEl.textContent = 'Atualizado! Próxima checagem em 2 minutos.';
 
       } catch (err) {
         statusEl.classList.add('error');
@@ -220,10 +231,10 @@
     }
 
     // Atualização automática
-    setInterval(checkGuild, REFRESH_INTERVAL);
+    setInterval(() => checkGuild(false), REFRESH_INTERVAL);
 
-    // Primeira chamada
-    if (savedGuild) checkGuild();
+    // Primeira chamada (sem notificação inicial)
+    if (savedGuild) checkGuild(true);
   </script>
 </body>
 </html>
