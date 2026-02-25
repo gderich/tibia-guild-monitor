@@ -21,6 +21,7 @@
       padding: 20px;
       max-width: 500px;
       margin: 0 auto;
+      position: relative; /* para posicionar botão fixo */
     }
     h1 { text-align: center; color: var(--accent); margin-bottom: 10px; }
     #guildInput {
@@ -33,7 +34,7 @@
       color: var(--text);
       font-size: 16px;
     }
-    button {
+    button.main-btn {
       width: 100%;
       padding: 12px;
       background: var(--accent);
@@ -44,7 +45,7 @@
       cursor: pointer;
       margin: 10px 0;
     }
-    button:hover { background: #388bfd; }
+    button.main-btn:hover { background: #388bfd; }
     #status {
       text-align: center;
       font-weight: bold;
@@ -67,38 +68,65 @@
     .name { font-weight: bold; font-size: 1.1em; }
     .details { font-size: 0.9em; color: #8b949e; margin-top: 4px; }
     #count { font-size: 1.4em; color: var(--green); }
+
+    /* Botão pequeno de notificações no canto superior direito */
+    #enableNotifications {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      width: 50px;
+      height: 50px;
+      font-size: 20px;
+      cursor: pointer;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      opacity: 0.9;
+    }
+    #enableNotifications:hover { opacity: 1; background: var(--accent); }
+    #enableNotifications.hidden { display: none; }
   </style>
 </head>
 <body>
   <h1>🛡️ Tibia Guild Online</h1>
 
   <input type="text" id="guildInput" placeholder="Nome exato da guild (ex: Quinta Serie Ead)" />
-  <button id="saveBtn">Salvar & Monitorar</button>
-  <button id="refreshBtn">Atualizar Agora</button>
+  <button class="main-btn" id="saveBtn">Salvar & Monitorar</button>
+  <button class="main-btn" id="refreshBtn">Atualizar Agora</button>
 
   <div id="status">Digite o nome da guild e clique em Salvar & Monitorar</div>
 
   <p>Online agora: <span id="count">0</span></p>
   <ul id="list"></ul>
 
- <!-- Som da notificação -->
-<audio id="notificationSound" preload="auto">
-  <source src="notification.mp3" type="audio/mpeg">
-  <!-- Seu arquivo subido na raiz do repositório -->
-</audio>
+  <!-- Botão pequeno de notificações (canto superior direito) -->
+  <button id="enableNotifications" title="Ativar notificações">🔔</button>
+
+  <!-- Som da notificação -->
+  <audio id="notificationSound" preload="auto">
+    <source src="notification.mp3" type="audio/mpeg">
+    <!-- Seu arquivo subido na raiz -->
+  </audio>
 
   <script>
     const API_BASE = "https://api.tibiadata.com/v4/guild/";
-    const REFRESH_INTERVAL = 60000; // 60 segundos (1 min) - ajuste para 30000 (30s) se quiser mais rápido
+    const REFRESH_INTERVAL = 60000; // 1 minuto
     let previousOnlineNames = new Set();
     const sound = document.getElementById('notificationSound');
+    const statusEl = document.getElementById('status');
     let countdownInterval;
 
     // Carrega guild salva
     const savedGuild = localStorage.getItem('tibiaGuild');
     if (savedGuild) {
       document.getElementById('guildInput').value = savedGuild;
-      document.getElementById('status').textContent = 'Monitorando... Atualizando agora.';
+      statusEl.textContent = 'Monitorando... Atualizando agora.';
       checkGuild(true);
     }
 
@@ -110,7 +138,7 @@
         return;
       }
       localStorage.setItem('tibiaGuild', guild);
-      document.getElementById('status').textContent = '✅ Guild salva! Atualizando...';
+      statusEl.textContent = '✅ Guild salva! Atualizando...';
       checkGuild(true);
     });
 
@@ -119,11 +147,30 @@
       checkGuild(true);
     });
 
+    // Botão ativar notificações (pequeno, canto)
+    const notifBtn = document.getElementById('enableNotifications');
+    notifBtn.addEventListener('click', () => {
+      if ("Notification" in window) {
+        Notification.requestPermission().then(permission => {
+          if (permission === "granted") {
+            statusEl.textContent = 'Notificações ativadas! Você receberá alertas.';
+            new Notification("Notificações ativadas", { body: "Pronto para monitorar a guild!" });
+            notifBtn.classList.add('hidden'); // esconde botão após ativar
+          } else {
+            statusEl.classList.add('error');
+            statusEl.textContent = 'Permissão negada. Notificações não serão mostradas.';
+          }
+        });
+      } else {
+        statusEl.classList.add('error');
+        statusEl.textContent = 'Seu navegador não suporta notificações.';
+      }
+    });
+
     async function checkGuild(isInitial = false) {
       const guild = localStorage.getItem('tibiaGuild');
       if (!guild) return;
 
-      const statusEl = document.getElementById('status');
       const countEl = document.getElementById('count');
       const listEl = document.getElementById('list');
 
@@ -171,7 +218,6 @@
             listEl.appendChild(li);
           });
 
-          // Notificação + som se houver novos e não for inicial
           if (newEntries.length > 0 && !isInitial) {
             const msg = newEntries.length === 1 
               ? `${newEntries[0].name} entrou online!` 
@@ -179,12 +225,12 @@
 
             statusEl.textContent = `Novos detectados: ${msg}`;
 
-            // Toca som (volume baixo)
+            // Som
             sound.volume = 0.3;
             sound.currentTime = 0;
             sound.play().catch(e => console.log("Som bloqueado:", e));
 
-            // Notificação do navegador
+            // Notificação
             if ("Notification" in window && Notification.permission === "granted") {
               new Notification("Tibia Guild Online", { body: msg });
             }
@@ -234,4 +280,3 @@
   </script>
 </body>
 </html>
-
