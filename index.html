@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Tibia Guild Online Monitor</title>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --text: #c9d1d9;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --orange: #f0883e;
+      --gray: #30363d;
+    }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      max-width: 500px;
+      margin: 0 auto;
+    }
+    h1 {
+      text-align: center;
+      color: var(--accent);
+      margin-bottom: 10px;
+    }
+    #guildInput {
+      width: 100%;
+      padding: 12px;
+      margin: 10px 0;
+      background: var(--gray);
+      border: 1px solid #444;
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 16px;
+    }
+    button {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      margin: 10px 0;
+    }
+    button:hover {
+      background: #388bfd;
+    }
+    #status {
+      text-align: center;
+      font-weight: bold;
+      margin: 15px 0;
+      min-height: 24px;
+    }
+    #status.error {
+      color: #f85149;
+    }
+    ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    li {
+      background: var(--gray);
+      padding: 12px;
+      margin: 8px 0;
+      border-radius: 6px;
+      border-left: 4px solid var(--green);
+    }
+    li.new {
+      border-left: 4px solid var(--orange);
+      background: #1f2a3a;
+    }
+    .name {
+      font-weight: bold;
+      font-size: 1.1em;
+    }
+    .details {
+      font-size: 0.9em;
+      color: #8b949e;
+      margin-top: 4px;
+    }
+    #count {
+      font-size: 1.4em;
+      color: var(--green);
+    }
+  </style>
+</head>
+<body>
+  <h1>🛡️ Tibia Guild Online</h1>
+
+  <input type="text" id="guildInput" placeholder="Nome exato da guild (ex: Quinta Serie Ead)" />
+  <button id="saveBtn">Salvar & Monitorar</button>
+
+  <div id="status">Digite o nome da guild e clique em Salvar & Monitorar</div>
+
+  <p>Online agora: <span id="count">0</span></p>
+  <ul id="list"></ul>
+
+  <audio id="notificationSound" preload="auto">
+    <source src="https://assets.codepen.io/243235/notification.mp3" type="audio/mpeg">
+    <!-- Você pode trocar por seu próprio MP3 depois -->
+  </audio>
+
+  <script>
+    const API_BASE = "https://api.tibiadata.com/v4/guild/";
+    const REFRESH_INTERVAL = 120000; // 2 minutos
+    let previousOnlineNames = new Set();
+    const sound = document.getElementById('notificationSound');
+
+    // Carrega guild salva
+    const savedGuild = localStorage.getItem('tibiaGuild');
+    if (savedGuild) {
+      document.getElementById('guildInput').value = savedGuild;
+      document.getElementById('status').textContent = 'Monitorando... Atualizando agora.';
+      checkGuild();
+    }
+
+    // Botão salvar
+    document.getElementById('saveBtn').addEventListener('click', () => {
+      const guild = document.getElementById('guildInput').value.trim();
+      if (!guild) {
+        alert('Digite o nome exato da guild!');
+        return;
+      }
+      localStorage.setItem('tibiaGuild', guild);
+      document.getElementById('status').textContent = '✅ Guild salva! Atualizando...';
+      checkGuild();
+    });
+
+    async function checkGuild() {
+      const guild = localStorage.getItem('tibiaGuild');
+      if (!guild) return;
+
+      const statusEl = document.getElementById('status');
+      const countEl = document.getElementById('count');
+      const listEl = document.getElementById('list');
+
+      statusEl.textContent = 'Carregando dados da API...';
+      listEl.innerHTML = '';
+
+      try {
+        const res = await fetch(API_BASE + encodeURIComponent(guild));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const json = await res.json();
+        if (json.error || !json.guild) {
+          throw new Error(json.message || 'Guild não encontrada');
+        }
+
+        const members = json.guild.members || [];
+        const online = members
+          .filter(m => m.status?.toLowerCase() === 'online')
+          .map(m => ({
+            name: m.name,
+            level: m.level,
+            vocation: m.vocation
+          }))
+          .sort((a, b) => a.name.localeCompare(b.name));
+
+        countEl.textContent = online.length;
+
+        if (online.length === 0) {
+          listEl.innerHTML = '<li>Ninguém online no momento</li>';
+        } else {
+          const currentNames = new Set(online.map(m => normalizeName(m.name)));
+          const newNames = [...currentNames].filter(n => !previousOnlineNames.has(n));
+
+          online.forEach(m => {
+            const li = document.createElement('li');
+            const isNew = newNames.includes(normalizeName(m.name));
+
+            if (isNew) li.classList.add('new');
+
+            li.innerHTML = `
+              <div class="name">${m.name}${isNew ? ' <span style="color:#ffeb3b">(Novo!)</span>' : ''}</div>
+              <div class="details">Level ${m.level} - ${m.vocation}</div>
+            `;
+            listEl.appendChild(li);
+          });
+
+          // Notificação se houver novos
+          if (newNames.length > 0 && !force) {
+            const msg = newNames.length === 1 
+              ? `${newNames[0]} entrou online!` 
+              : `${newNames.length} novos online!`;
+            
+            if ("Notification" in window && Notification.permission === "granted") {
+              new Notification("Tibia Guild Online", { body: msg });
+            } else if (Notification.permission !== "denied") {
+              Notification.requestPermission().then(perm => {
+                if (perm === "granted") new Notification("Tibia Guild Online", { body: msg });
+              });
+            }
+
+            // Toca som
+            sound.currentTime = 0;
+            sound.play().catch(e => console.log("Som bloqueado:", e));
+          }
+
+          previousOnlineNames = currentNames;
+        }
+
+        statusEl.textContent = 'Atualizado! Próxima checagem em 2 minutos.';
+
+      } catch (err) {
+        statusEl.classList.add('error');
+        statusEl.textContent = 'Erro: ' + err.message;
+        console.error(err);
+      }
+    }
+
+    function normalizeName(name) {
+      return name.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, " ");
+    }
+
+    // Atualização automática
+    setInterval(checkGuild, REFRESH_INTERVAL);
+
+    // Primeira chamada
+    if (savedGuild) checkGuild();
+  </script>
+</body>
+</html>
